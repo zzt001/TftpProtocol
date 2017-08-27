@@ -83,7 +83,7 @@ int main(int argc, char*argv[]){
     		receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize);
     		if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
     			fprintf(stderr,"Error: received a packet from unknown source.\n");
-    			fclose(filename);
+    			fclose(file);
     			exit(1);
     		}
     		// get opcode
@@ -93,7 +93,7 @@ int main(int argc, char*argv[]){
     		// if error 
     		if(opcode == ERROR) {
     			handleError(MsgBuffer);
-    			fclose(filename);
+    			fclose(file);
     			exit(1);
     		}
 
@@ -104,7 +104,7 @@ int main(int argc, char*argv[]){
 
     			if(packet_block > next_block){
     				fprintf(stderr,"unordered data packet received. Session terminated\n");
-    				fclose(filename);
+    				fclose(file);
     				exit(1);
     			}
     			// duplicate packet received, we retransmit last ack message
@@ -117,7 +117,7 @@ int main(int argc, char*argv[]){
     				// determine the data length
     				if(receiveLen-4 >MAX_DATA_SIZE) {
     					fprintf(stderr,"data segment too big. Session terminated\n");
-    					fclose(filename);
+    					fclose(file);
     					exit(1);
     				}
     				printf("Received block #%u of data.\n",packet_block);
@@ -168,6 +168,110 @@ int main(int argc, char*argv[]){
     //write request
     else{
     	packet = create_request(WRQ,filename,mode);
+        printf("Sending [Write request]\n");
+        if (sendto(sock, packet, packetLen, 0, (struct sockaddr *)&servAddr, sizeof(servAddr)) != packetLen) {
+            fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
+        }
+
+        FILE* file = fopen( filename, "rb" );
+        unsigned short send_block;
+        unsigned short packet_block = 0;
+        unsigned short ack_block = 0;
+        char buf[BUF_SIZE];
+
+        //transfer file from client to server
+        while(!done) {
+            fromSize = sizeof(fromAddr);
+            receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
+            if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+                fprintf(stderr,"Error: received a packet from unknown source.\n");
+                fclose(file);
+                exit(1);
+            }
+
+            //get opt code
+            unsigned short opcode;
+            memcpy(&opcode, MsgBuffer, 2);
+            opcode = ntohs(opcode);
+            //if error
+            if(opcode == ERROR) {
+                fprintf(stderr, "Request rejected\n");
+                fclose(file);
+                exit(1);
+            }
+            else if ( opcode == ACK ) {
+                memcpy(&ack_block, MsgBuffer+2, 2);
+                ack_block = ntohs(ack_block);
+
+                
+                if (ack_block == packet_block) {
+                    //determine the data length
+                    int sizeReadIn = fread(buf+4, 1, 512, file);
+
+                    //send to serveer
+                    packet_block++;
+                    create_data(packet_block, buf);
+                    if (sendto(sock, buf, 4+sizeReadIn, 0, (struct sockaddr *)&servAddr, sizeof(servAddr)) != 4+sizeReadIn) {
+                        fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
+                        fclose(file);
+                        exit(1);
+                    }
+
+
+                    if (sizeReadIn < MAX_DATA_SIZE) {
+                        done = 1;
+
+                    }
+
+
+                }
+                else if (ack_block > packet_block) {
+                    fprintf(stderr, "unordered ACK received. Session terminated\n");
+                    fclose(file);
+                    exit(1);
+                }
+            }
+            else {
+                fprintf(stderr,"Unknown packet received. Session terminated\n");
+                exit(1);
+            }
+        }
+
+        printf("Total transmitting blocks: %u", packet_block);
+        fclose(file);
+
+
+        fromSize = sizeof(fromAddr);
+        receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
+        if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+            fprintf(stderr,"Error: received a packet from unknown source.\n");
+            fclose(file);
+            exit(1);
+        }
+
+        //get opt code
+        unsigned short opcode;
+        memcpy(&opcode, MsgBuffer, 2);
+        opcode = ntohs(opcode);
+        if(opcode == ERROR) {
+            fprintf(stderr, "Request rejected\n");
+            fclose(file);
+            exit(1);
+        }
+        else if (opcode == ACK) {
+            memcpy(&ack_block, MsgBuffer+2, 2);
+            ack_block = ntohs(ack_block);
+
+            if (ack_block != packet_block) {
+                //TODO
+            }
+        }
+        else {
+            fprintf(stderr,"Unknown packet received. Session terminated\n");
+            exit(1);
+        }
+
+
 
     }
 
