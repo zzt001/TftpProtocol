@@ -212,22 +212,50 @@ int main(int argc, char*argv[]){
 
     //write request
     else{
-    	packet = create_request(WRQ,filename,mode);
+    	buf = create_request(WRQ,filename,mode);
         printf("Sending [Write request]\n");
         if (sendto(sock, packet, packetLen, 0, (struct sockaddr *)&servAddr, sizeof(servAddr)) != packetLen) {
             fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
         }
+
+        while((receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0){
+                /* Alarm went off */
+                if (errno == EINTR) {
+                    if (tries < MAXTRIES) {
+                        printf("timed out, %d more tries...\n", MAXTRIES-tries);
+                        if(sendto(sock, buf, BUF_SIZE,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= BUF_SIZE){
+                            fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
+                            exit(1);
+                            alarm(TIMEOUT_SECS);
+                        }
+                    }
+                    else{
+                        fprintf(stderr,"No response. Session ends");
+                        exit(1);
+                    }
+                }
+                else{
+                    fprintf(stderr,"Rcvfrom() failed");
+                    exit(1);
+                }
+
+            }
+        alarm(0);
+
+
 
         FILE* file = fopen( filename, "rb" );
         unsigned short send_block;
         unsigned short packet_block = 0;
         unsigned short ack_block = 0;
         char buf[BUF_SIZE];
+        int sizeReadIn;
 
         //transfer file from client to server
         while(!done) {
-            fromSize = sizeof(fromAddr);
-            receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
+
+
+            //receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
             if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
                 fprintf(stderr,"Error: received a packet from unknown source.\n");
                 fclose(file);
@@ -253,7 +281,7 @@ int main(int argc, char*argv[]){
                 
                 if (ack_block == packet_block) {
                     //determine the data length
-                    int sizeReadIn = fread(buf+4, 1, 512, file);
+                    sizeReadIn = fread(buf+4, 1, 512, file);
 
                     //send to serveer
                     packet_block++;
@@ -265,8 +293,9 @@ int main(int argc, char*argv[]){
                     }
 
 
-                    if (sizeReadIn < MAX_DATA_SIZE) {
+                    if (sizeReadIn == 0) {
                         done = 1;
+                        break;
 
                     }
 
@@ -277,11 +306,43 @@ int main(int argc, char*argv[]){
                     fclose(file);
                     exit(1);
                 }
+                else {
+                    printf("Received duplicate ack #%u. ignored.\n", ack_block);
+                }
             }
             else {
                 fprintf(stderr,"Unknown packet received. Session terminated\n");
                 exit(1);
             }
+
+
+
+            fromSize = sizeof(fromAddr);
+
+            alarm(TIMEOUT_SECS);
+            while((receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0){
+                /* Alarm went off */
+                if (errno == EINTR) {
+                    if (tries < MAXTRIES) {
+                        printf("timed out, %d more tries...\n", MAXTRIES-tries);
+                        if(sendto(sock, buf, BUF_SIZE, 0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= BUF_SIZE){
+                            fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
+                            exit(1);
+                            alarm(TIMEOUT_SECS);
+                        }
+                    }
+                    else{
+                        fprintf(stderr,"No response. Session ends");
+                        exit(1);
+                    }
+                }
+                else{
+                    fprintf(stderr,"Rcvfrom() failed");
+                    exit(1);
+                }
+
+            }
+            alarm(0);
         }
 
         printf("Total transmitting blocks: %u", packet_block);
@@ -289,7 +350,33 @@ int main(int argc, char*argv[]){
 
 
         fromSize = sizeof(fromAddr);
-        receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
+        
+        alarm(TIMEOUT_SECS);
+        while((receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0){
+                /* Alarm went off */
+                if (errno == EINTR) {
+                    if (tries < MAXTRIES) {
+                        printf("timed out, %d more tries...\n", MAXTRIES-tries);
+                        if(sendto(sock, buf, 4+sizeReadIn,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= 4+sizeReadIn){
+                            fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
+                            exit(1);
+                            alarm(TIMEOUT_SECS);
+                        }
+                    }
+                    else{
+                        fprintf(stderr,"No response. Session ends");
+                        exit(1);
+                    }
+                }
+                else{
+                    fprintf(stderr,"Rcvfrom() failed");
+                    exit(1);
+                }
+
+            }
+        alarm(0);
+
+        //receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
         if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
             fprintf(stderr,"Error: received a packet from unknown source.\n");
             fclose(file);
