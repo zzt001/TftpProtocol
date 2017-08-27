@@ -203,6 +203,8 @@ int main(int argc, char*argv[]){
                 memcpy(&ack_block, MsgBuffer+2, 2);
                 ack_block = ntohs(ack_block);
 
+                printf("Received ACK packet %u\n", ack_block);
+
                 
                 if (ack_block == packet_block) {
                     //determine the data length
