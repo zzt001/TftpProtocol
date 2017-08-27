@@ -2,8 +2,8 @@
 #define TFTPHEADER_H
 
 
-#define SERV_PORT 6132 //6100+group # 
-#define BUF_SIZE 1024 // the maximum buffer size
+#define SERV_PORT 61004 //61000+group # 
+#define BUF_SIZE 516 // the maximum buffer size
 #define TIMEOUT 10  
 #define MAX_DATA_SIZE 512
 #define MODE "octect\0"
@@ -16,6 +16,7 @@
 #define SERV_LOCALHOST "127.0.0.1"
 #define ACK_LEN
 #define FILENAME_MAX 128
+#define ERROR_MAX 133
 
 char * tftp_errors[]={
 	"Not defined, see error message (if any).",
@@ -31,6 +32,7 @@ char * tftp_errors[]={
 void create_ack(unsigned short ack_block, char* ack_buff);
 char * create_request(unsigned short opcode);
 void create_data(unsigned short data_block, char* data_buff);
-void create_error(unsigned short errorCode, char* error_buff);
+
+void create_Error(unsigned short errorCode, char* errorMessage, char* error_buff);
 
 #endif

@@ -8,7 +8,7 @@
 #include    "tftp.h"
 	
 
-void handleError(char *errorPacket);
+void handleError(unsigned short errorCode, char* errorMessage);
 
 int main(int argc, char*argv[]){
 	int sock;
@@ -158,7 +158,7 @@ int main(int argc, char*argv[]){
 
 
     	//when read ends
-    	printf("Total transmitting blocks: %u",next_block-1);
+    	printf("Total receiving blocks: %u",next_block-1);
     	fclose(file);
 
 

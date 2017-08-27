@@ -22,6 +22,20 @@ char * create_request(unsigned short opcode, char* filename, char* mode){
 
 }
 void create_data(unsigned short data_block, char* data_buff){
+	unsigned short opcode = DATA;
+	opcode = htons(opcode);
+	memcpy(data_buff,&opcode, 2);
+	data_block = htons(data_block);
+	memcpy(data_buff+2,&data_block,2);
 
 }
-void create_error(unsigned short errorCode);
+
+void create_Error(unsigned short errorCode, char* errorMessage, char* error_buff){
+	unsigned short opcode = ERROR;
+	opcode = htons(opcode);
+	memcpy(error_buff,&opcode,2);
+	errorCode = htons(errorCode);
+	memcpy(error_buff+2,&errorCode,2);
+	strcpy(error_buff+4,errorMessage);
+
+}
