@@ -84,7 +84,7 @@ int main(int argc, char*argv[]){
 
     	// send the request
     	printf("Sending [Read request]\n");
-    	if(sendto(sock, packet, packetLen,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= packetLen){
+    	if(sendto(sock, packet, BUF_SIZE,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= packetLen){
     		fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
             exit(1);
     	}
@@ -97,7 +97,7 @@ int main(int argc, char*argv[]){
                 if (errno == EINTR) {
                     if (tries < MAXTRIES) {
                         printf("timed out, %d more tries...\n", MAXTRIES-tries);
-                        if(sendto(sock, packet, packetLen,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= packetLen){
+                        if(sendto(sock, packet, BUF_SIZE,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= packetLen){
                             fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
                             exit(1);
                             alarm(TIMEOUT_SECS);

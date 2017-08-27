@@ -7,8 +7,7 @@ void create_ack(unsigned short ack_block, char* ack_buff ){
 	memcpy(ack_buff+2,&ack_block,2);
 }
 char * create_request(unsigned short opcode, char* filename, char* mode){
-	int packetLen = 4 + strlen(filename) + strlen(mode);
-    char *packet = (char*)calloc(packetLen,sizeof(char));
+    char *packet = (char*)calloc(BUF_SIZE,sizeof(char));
     unsigned short op_code = opcode;
     op_code = htons(op_code);
     memcpy(packet,&op_code,2);
