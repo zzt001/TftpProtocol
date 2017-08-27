@@ -1,12 +1,10 @@
 
 #include "tftp.h"
-char * create_ack(unsigned short ack_block){
-	char *ack_packet = malloc(4);
+void create_ack(unsigned short ack_block, char* ack_buff ){
 	unsigned short opcode = ACK;
 	opcode = htons(opcode);
-	memcpy(ack_packet,&opcode,2);
-	memcpy(ack_packet+2,&ack_block,2);
-	return (char *) ack_packet;
+	memcpy(ack_buff,&opcode,2);
+	memcpy(ack_buff+2,&ack_block,2);
 }
 char * create_request(unsigned short opcode, char* filename, char* mode){
 	int packetLen = 4 + strlen(filename) + strlen(mode);
@@ -23,5 +21,7 @@ char * create_request(unsigned short opcode, char* filename, char* mode){
     return packet;
 
 }
-char * create_data(unsigned short data_block, char* data);
-char * create_error(unsigned short errorCode);
+void create_data(unsigned short data_block, char* data_buff){
+
+}
+void create_error(unsigned short errorCode);

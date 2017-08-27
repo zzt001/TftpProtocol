@@ -28,9 +28,9 @@ char * tftp_errors[]={
 	"No such user."
 };
 
-char * create_ack(unsigned short ack_block);
+void create_ack(unsigned short ack_block, char* ack_buff);
 char * create_request(unsigned short opcode);
-char * create_data(unsigned short data_block, char* data);
-char * create_error(unsigned short errorCode);
+void create_data(unsigned short data_block, char* data_buff);
+void create_error(unsigned short errorCode, char* error_buff);
 
 #endif

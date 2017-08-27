@@ -135,7 +135,9 @@ int main(int argc, char*argv[]){
 
 
     			//send ack to sender
-    			char *ack_packet = create_ack(ack_block);
+    			char ack_packet[4];
+    			create_ack(ack_packet);
+
     			printf("Sending Ack #%u",ack_block);
 
     			if(sendto(sock, ack_packet, ACK_LEN,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= ACK_LEN){
@@ -154,7 +156,7 @@ int main(int argc, char*argv[]){
 
     	}
 
-    	
+
     	//when read ends
     	printf("Total transmitting blocks: %u",next_block-1);
     	fclose(file);
@@ -170,7 +172,7 @@ int main(int argc, char*argv[]){
     }
 
 
-    // send the request
+
 
 
 
