@@ -25,6 +25,7 @@ int main(int argc, char*argv[]){
 	char* mode = MODE;
 	int packetLen;
 	int receiveLen;
+	int done =0;
 
 	/* check command line argument*/
 	if(argc <3 || strcmp(argv[1],opRead)!=0 || strcmp(argv[1],opWrite)!=0 ){
@@ -77,7 +78,7 @@ int main(int argc, char*argv[]){
     	unsigned short packet_block;
     	unsigned short ack_block=1;
     	// transfer file from server to client
-    	while(1){
+    	while(!done){
     		fromSize = sizeof(fromAddr);
     		receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize);
     		if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
@@ -96,7 +97,7 @@ int main(int argc, char*argv[]){
     			exit(1);
     		}
 
-    		else if( opcode ==DATA ){
+    		else if( opcode == DATA ){
     			// get block number of this packet
     			memcpy(&packet_block,MsgBuffer+2,2);
     			packet_block = ntohs(packet_block);
@@ -108,6 +109,8 @@ int main(int argc, char*argv[]){
     			}
     			// duplicate packet received, we retransmit last ack message
     			if(packet_block != next_block){
+    					printf("Received block #%u of data, which is duplicated.\n",packet_block);
+
     					ack_block = packet_block;
     			}
     			else{
@@ -117,20 +120,31 @@ int main(int argc, char*argv[]){
     					fclose(filename);
     					exit(1);
     				}
+    				printf("Received block #%u of data.\n",packet_block);
     				fwrite(MsgBuffer+4,1,receiveLen-4, file);
 
     				ack_block = next_block;
     				next_block++;
 
-    				//send ack to sender
-    				char *ack_packet = create_ack(ack_block)
-
 
     				//if the block is the last one
     				if(receiveLen-4 < MAX_DATA_SIZE){
-    					fclose(filename);
+    					done = 1;
     				}
     			}
+
+
+    			//send ack to sender
+    			char *ack_packet = create_ack(ack_block);
+    			printf("Sending Ack #%u",ack_block);
+
+    			if(sendto(sock, ack_packet, ACK_LEN,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= ACK_LEN){
+    				fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
+    			}
+
+
+
+
 
     		}
     		else{
@@ -138,14 +152,17 @@ int main(int argc, char*argv[]){
     			exit(1);
     		}
 
-
-
-
-
     	}
+
+    	
+    	//when read ends
+    	printf("Total transmitting blocks: %u",next_block-1);
+    	fclose(file);
 
 
     }
+
+
     //write request
     else{
     	packet = create_request(WRQ,filename,mode);
