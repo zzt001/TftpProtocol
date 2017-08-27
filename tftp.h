@@ -17,6 +17,9 @@
 #define ACK_LEN
 #define FILENAME_MAX 128
 #define ERROR_MAX 133
+#define TIMEOUT_SECS 2
+#define MAXTRIES 10
+
 
 char * tftp_errors[]={
 	"Not defined, see error message (if any).",
@@ -34,5 +37,5 @@ char * create_request(unsigned short opcode);
 void create_data(unsigned short data_block, char* data_buff);
 
 void create_Error(unsigned short errorCode, char* errorMessage, char* error_buff);
-
+void CatchAlarm(int ignored);
 #endif

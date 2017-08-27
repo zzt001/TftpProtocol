@@ -8,7 +8,6 @@
 #include    "tftp.h"
 	
 
-void handleError(unsigned short errorCode, char* errorMessage);
 
 int main(int argc, char*argv[]){
 	int sock;
@@ -20,12 +19,14 @@ int main(int argc, char*argv[]){
 	char MsgBuffer[BUF_SIZE]; //buffer for receiving packet
 	char filename[FILENAME_MAX];
 	char * opRead = "-r";
-	char *opWrite = "-w";
+	char * opWrite = "-w";
 	char *packet;
 	char* mode = MODE;
 	int packetLen;
 	int receiveLen;
 	int done =0;
+    int tries=0;
+    void CatchAlarm(int ignored);
 
 	/* check command line argument*/
 	if(argc <3 || strcmp(argv[1],opRead)!=0 || strcmp(argv[1],opWrite)!=0 ){
@@ -41,6 +42,20 @@ int main(int argc, char*argv[]){
 		fprintf(stderr,"Filename too long. Must be within 128\n");
 		exit(1);
 	}
+
+    /* Set signal handler for alarm signal */ 
+    myAction.sa_handler = CatchAlarm;
+
+    if (sigfillset(&myAction.sa_mask) < O) {/* block everything in handler */ 
+        fprintf(stderr, "sigfillset () failed") ;
+        exit(1);
+    }
+    myAction.sa_flags = O;
+
+    if (sigaction(SlGALRN, &myAction, O) < O) {
+        fprintf(stderr,"sigaction() failed for SIGALP~") ;
+    }
+
 
 
 	/* create and intialize udp socket */
@@ -71,7 +86,35 @@ int main(int argc, char*argv[]){
     	printf("Sending [Read request]\n");
     	if(sendto(sock, packet, packetLen,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= packetLen){
     		fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
+            exit(1);
     	}
+        // receive the first block , which means session begins.
+        fromSize = sizeof(fromAddr);
+
+        alarm(TIMEOUT_SECS);
+        while((receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0){
+                /* Alarm went off */
+                if (errno == EINTR) {
+                    if (tries < MAXTRIES) {
+                        printf("timed out, %d more tries...\n", MAXTRIES-tries);
+                        if(sendto(sock, packet, packetLen,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= packetLen){
+                            fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
+                            exit(1);
+                            alarm(TIMEOUT_SECS);
+                        }
+                    }
+                    else{
+                        fprintf(stderr,"No response. Session ends");
+                        exit(1);
+                    }
+                }
+                else{
+                    fprintf(stderr,"Rcvfrom() failed");
+                    exit(1);
+                }
+
+            }
+        alarm(0);
 
     	FILE* file = fopen( filename, "wb" );
     	unsigned short next_block = 1;
@@ -79,8 +122,7 @@ int main(int argc, char*argv[]){
     	unsigned short ack_block=1;
     	// transfer file from server to client
     	while(!done){
-    		fromSize = sizeof(fromAddr);
-    		receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize);
+
     		if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
     			fprintf(stderr,"Error: received a packet from unknown source.\n");
     			fclose(file);
@@ -92,7 +134,7 @@ int main(int argc, char*argv[]){
     		opcode = ntohs(opcode);
     		// if error 
     		if(opcode == ERROR) {
-    			handleError(MsgBuffer);
+    			fprintf("Request rejected.\n");
     			fclose(file);
     			exit(1);
     		}
@@ -144,7 +186,10 @@ int main(int argc, char*argv[]){
     				fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
     			}
 
+                // wait to receive next block
+                fromSize = sizeof(fromAddr);
 
+                receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize);
 
 
 
@@ -276,6 +321,7 @@ int main(int argc, char*argv[]){
 
 
     }
+
 
 
 
