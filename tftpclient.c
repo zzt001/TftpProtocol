@@ -178,7 +178,7 @@ int main(int argc, char*argv[]){
 
     			//send ack to sender
     			char ack_packet[4];
-    			create_ack(ack_packet);
+    			create_ack(ack_block, ack_packet);
 
     			printf("Sending Ack #%u",ack_block);
 
@@ -188,6 +188,7 @@ int main(int argc, char*argv[]){
 
                 // wait to receive next block
                 fromSize = sizeof(fromAddr);
+
 
                 receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize);
 
