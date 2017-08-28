@@ -102,8 +102,9 @@ int main(int argc, char*argv[]){
                         if(sendto(sock, packet, BUF_SIZE,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= packetLen){
                             fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
                             exit(1);
-                            alarm(TIMEOUT_SECS);
+                            
                         }
+                        alarm(TIMEOUT_SECS);
                     }
                     else{
                         fprintf(stderr,"No response. Session ends");
@@ -331,8 +332,9 @@ int main(int argc, char*argv[]){
                         if(sendto(sock, buf, BUF_SIZE, 0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= BUF_SIZE){
                             fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
                             exit(1);
-                            alarm(TIMEOUT_SECS);
+                            
                         }
+                        alarm(TIMEOUT_SECS);
                     }
                     else{
                         fprintf(stderr,"No response. Session ends");
@@ -363,8 +365,9 @@ int main(int argc, char*argv[]){
                         if(sendto(sock, buf, 4+sizeReadIn,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= 4+sizeReadIn){
                             fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
                             exit(1);
-                            alarm(TIMEOUT_SECS);
+                          
                         }
+                        alarm(TIMEOUT_SECS);
                     }
                     else{
                         fprintf(stderr,"No response. Session ends");
