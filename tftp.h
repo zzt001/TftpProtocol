@@ -20,16 +20,7 @@
 #define MAXTRIES 10
 
 
-char * tftp_errors[]={
-	"Not defined, see error message (if any).",
-	"File not found.",
-	"Access violation.",
-	"Disk full or allocation exceeded.",
-	"Illegal TFTP operation.",
-	"Unknown transfer ID.",
-	"File already exists",
-	"Server is busy serving another client. Please wait."
-};
+
 
 void create_ack(unsigned short ack_block, char* ack_buff);
 char * create_request(unsigned short opcode, char* filename, char* mode);

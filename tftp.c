@@ -1,8 +1,12 @@
-
+#include 	<strings.h>
+#include    <sys/socket.h>
+#include    <arpa/inet.h>
+#include 	<stdlib.h>
 #include "tftp.h"
 void create_ack(unsigned short ack_block, char* ack_buff ){
 	unsigned short opcode = ACK;
 	opcode = htons(opcode);
+    ack_block=htons(ack_block);
 	memcpy(ack_buff,&opcode,2);
 	memcpy(ack_buff+2,&ack_block,2);
 }

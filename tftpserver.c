@@ -9,12 +9,27 @@
 #include <string.h>
 #include "tftp.h"
 
-
+// number of timeout
 int tries = 0;
+
+//some declaration
 void CatchAlarm(int ignored);
 
 
 void DieWithError(char *errorMessage);
+
+char *tftp_errors[]={
+	"Not defined, see error message (if any).",
+	"File not found.",
+	"Access violation.",
+	"Disk full or allocation exceeded.",
+	"Illegal TFTP operation.",
+	"Unknown transfer ID.",
+	"File already exists",
+	"Server is busy serving another client. Please wait."
+};
+
+
 
 int main(int argc, char *argv[]){
 	int sock;         /*Socket*/
@@ -26,23 +41,32 @@ int main(int argc, char *argv[]){
 	char receive_buffer[BUF_SIZE];  // Buffer for data
 	unsigned short servPort;    //  server port
 	int recvMsgSize;  // size of received message
-
+    unsigned short opcode;
 	char filename[FILENAME_MAX];
 	char* mode = MODE;
 	char err_packet[ERROR_MAX];
-
 	struct sigaction myAction;
+    char* operand  = "&";
+    unsigned short next_block;
+    unsigned short last_block;
+    unsigned short ack_block;
+    unsigned short receive_block;
+    char buf[BUF_SIZE];
+    int sizeReadIn;
+    int done = 0;
+    
 
 	// we use serve to determine if server is currently serving client
 	// and curr_clntAddr to store that client address
 	/*int serve = 0;
 	struct curr_clntAddr;*/
 
-	if ( argc != 2 || strcmp(argv[1],"&")!=0){
-		fprintf(stderr, "Usage: %s &\n", argv[0]);
-		exit(0);
-	}
-
+	if ( argc != 1){
+		fprintf(stderr, "Usage: %s \n", argv[0]);
+        
+		exit(1);
+    }
+    
 
 	servPort = SERV_PORT;
 
@@ -63,18 +87,18 @@ int main(int argc, char *argv[]){
     /* Set signal handler for alarm signal */ 
     myAction.sa_handler = CatchAlarm;
 
-    if (sigfillset(&myAction.sa_mask) < O) {/* block everything in handler */ 
+    if (sigfillset(&myAction.sa_mask) < 0) {/* block everything in handler */ 
         fprintf(stderr, "sigfillset () failed") ;
         exit(1);
     }
-    myAction.sa_flags = O;
+    myAction.sa_flags = 0;
 
-    if (sigaction(SlGALRN, &myAction, O) < O) {
+    if (sigaction(SIGALRM, &myAction, 0) < 0) {
         fprintf(stderr,"sigaction() failed for SIGALP~") ;
     }
 
 
-
+    
 
 
 
@@ -89,9 +113,6 @@ int main(int argc, char *argv[]){
 
 
 
-
-
-		unsigned short opcode;
 		//get the opcode from packet
 		memcpy(&opcode, receive_buffer, 2);
 		opcode = ntohs(opcode);
@@ -100,7 +121,6 @@ int main(int argc, char *argv[]){
 		// we handle read request
 		if(opcode == RRQ){
 			/* we store current client address */
-
 			memset(&ClntAddr,0,sizeof(ClntAddr));
 			ClntAddr.sin_family = fromAddr.sin_family;
 			ClntAddr.sin_port = fromAddr.sin_port;
@@ -127,21 +147,16 @@ int main(int argc, char *argv[]){
 			}
 
 			// read and transmit file
+            last_block = 1;
 
-        	unsigned short packet_block = 1;
-        	unsigned short ack_block ;
-        	char buf[BUF_SIZE];
-        	int sizeReadIn;
-        	int done = 0;
-        	int tries = 0;
-
+            
 
         	//transfer file from server to client
 
         	/* send first block */
         	sizeReadIn = fread(buf+4, 1, 512, file);
-            create_data(packet_block, buf);
-            printf("Sending pck #%u\n",packet_block);
+            create_data(last_block, buf);
+            printf("Sending pck #%u\n",last_block);
             if (sendto(sock, buf, 4+sizeReadIn, 0, (struct sockaddr *)&ClntAddr, sizeof(ClntAddr)) != 4+sizeReadIn) {
                 fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
                 fclose(file);
@@ -160,7 +175,7 @@ int main(int argc, char *argv[]){
                 if (errno == EINTR) {
                     if (tries < MAXTRIES) {
                         printf("timed out, %d more tries...\n", MAXTRIES-tries);
-                        printf("Resending pck #%u\n",packet_block);
+                        printf("Resending pck #%u\n",last_block);
                         if(sendto(sock, buf, 4+sizeReadIn, 0,(struct sockaddr *)&ClntAddr, sizeof(ClntAddr))!= 4+sizeReadIn){
                             fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
                             exit(1);
@@ -188,33 +203,33 @@ int main(int argc, char *argv[]){
 
 
 	            //get opt code
-	            unsigned short opcode;
 	            memcpy(&opcode, receive_buffer, 2);
 	            opcode = ntohs(opcode);
 	            //if error
 	            if(opcode == ERROR) {
-	                create_Error((unsigned short)0, "Packet opcode field invalide. Request reject.", err_packet);
+	                create_Error((unsigned short)0, "Packet opcode field invalid. Request reject.", err_packet);
 					sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
 					break;
 	            }
 	            else if ( opcode == ACK ) {
-	                memcpy(&ack_block, receive_buffer+2, 2);
-	                ack_block = ntohs(ack_block);
+	                memcpy(&receive_block, receive_buffer+2, 2);
+	                receive_block = ntohs(receive_block);
 
-                	printf("Received ACK packet %u\n", ack_block);
+                	printf("Received ACK packet %u\n", receive_block);
 
                 
-	                if (ack_block == packet_block) {
+	                if (receive_block == last_block) {
 	       				// send next block#
-	                	packet_block++;
+	                	last_block++;
 	                	sizeReadIn = fread(buf+4, 1, 512, file);
 
 	                	if(sizeReadIn == 0){
-	                		printf("File successfully transmitted");
+	                		printf("File successfully transmitted\n");
+                            
 	                		break;
 	                	}
-	            		create_data(packet_block, buf);
-	            		printf("Sending pck #%u\n",packet_block);
+	            		create_data(last_block, buf);
+	            		printf("Sending pck #%u\n",last_block);
 	            		if (sendto(sock, buf, 4+sizeReadIn, 0, (struct sockaddr *)&ClntAddr, sizeof(ClntAddr)) != 4+sizeReadIn) {
 	                		fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
 	                		fclose(file);
@@ -222,22 +237,25 @@ int main(int argc, char *argv[]){
 						}
 
 	                }
-	                else if (ack_block > packet_block) {
-	                    fprintf(stderr, "unordered ACK received. Session terminated\n");
-	                    fclose(file);
-	                    exit(1);
+	                else if (receive_block > last_block) {
+                        // unordered ack packet, end session
+                        create_Error((unsigned short)5, tftp_errors[5], err_packet);
+                        sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
+                        break;
 	                }
 	                else {
-	                    printf("Received duplicate ack #%u. ignored.\n", ack_block);
+	                    printf("Received duplicate ack #%u. ignored.\n", receive_block);
 	                }
 	            }
 	            else {
-	                fprintf(stderr,"Unknown packet received. Session terminated\n");
-	                exit(1);
+                    //illegal operation
+                    create_Error((unsigned short)4, tftp_errors[4], err_packet);
+                    sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
+                    break;
 	            }
 	        }
 
-        	printf("Total transmitting blocks: %u", packet_block);
+        	printf("Total transmitting blocks: %u", last_block);
         	fclose(file);
 
 
@@ -262,10 +280,6 @@ int main(int argc, char *argv[]){
 			printf("Handling client %s with [Write request]\n",inet_ntoa(ClntAddr.sin_addr));
 
 
-			char buf[BUF_SIZE];
-			int done = 0;
-
-			int receiveLen;
 
 			strcpy(filename, receive_buffer+2);
 
@@ -281,8 +295,8 @@ int main(int argc, char *argv[]){
 			//check already existence
 			FILE *file = fopen(filename,"rb");
 			// check file exists or not
-			if (file ==NULL){
-				create_Error((unsigned short)1, tftp_errors[1], err_packet);
+			if (file !=NULL){
+				create_Error((unsigned short)6, tftp_errors[6], err_packet);
 				sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&ClntAddr,sizeof(ClntAddr));
 				continue;
 			}
@@ -303,16 +317,16 @@ int main(int argc, char *argv[]){
 
         	//open for writing in
         	file = fopen( filename, "wb" );
-        	unsigned short next_block = 1;
-        	unsigned short packet_block;
-        	unsigned short ack_block = 1;
+        	next_block = 1;
+   
+        	ack_block = 1;
 
 			//begin accepting packets
 			while(!done) {
 
 				// if we no longer receive from the client, we end this session
 				alarm(WAIT_MAX_SEC );
-            	while((receiveLen = recvfrom(sock, receive_buffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0 || ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+            	while((recvMsgSize = recvfrom(sock, receive_buffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0 || ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
                 /* Alarm went off */
 	                if (errno == EINTR) {
 	                    printf("Client no response. Session end.\n");
@@ -339,36 +353,36 @@ int main(int argc, char *argv[]){
 
     			//if receive data
     			if ( opcode == DATA ) {
-    				memcpy(&packet_block, receive_buffer+2, 2);
-    				packet_block = ntohs(packet_block);
+    				memcpy(&receive_block, receive_buffer+2, 2);
+    				receive_block = ntohs(receive_block);
 
-    				if (packet_block > next_block) {
+    				if (receive_block > next_block) {
     					create_Error((unsigned short)1, tftp_errors[5], err_packet);
 						sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
 						break;
     				}
 
     				//duplicate packet received, we retransmit last ack message
-    				if(packet_block != next_block){
-    					printf("Received block #%u of data, which is duplicated.\n",packet_block);
+    				if(receive_block != next_block){
+    					printf("Received block #%u of data, which is duplicated.\n",receive_block);
 
-    					ack_block = packet_block;
+    					ack_block = receive_block;
     				}
     				else {
     					//determine the data length
-    					if (receiveLen - 4 > MAX_DATA_SIZE) {
+    					if (recvMsgSize - 4 > MAX_DATA_SIZE) {
     						create_Error((unsigned short)1, tftp_errors[3], err_packet);
 							sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
 							break;
     					}
-    					printf("Received block #%u of data\n", packet_block);
-    					fwrite(receive_buffer+4,1,receiveLen-4, file);
+    					printf("Received block #%u of data\n", receive_block);
+    					fwrite(receive_buffer+4,1,recvMsgSize-4, file);
 
     					ack_block = next_block;
     					next_block++;
 
     					//if the block is the last one
-    					if(receiveLen - 4 < MAX_DATA_SIZE) {
+    					if(recvMsgSize - 4 < MAX_DATA_SIZE) {
     						done = 1;
     					}
     				}
@@ -378,7 +392,7 @@ int main(int argc, char *argv[]){
     		
     				create_ack(ack_block, buf);
 
-    				printf("Sending ACK #%u", ack_block);
+    				printf("Sending ACK #%u\n", ack_block);
 
     				if(sendto(sock, buf, BUF_SIZE,0,(struct sockaddr *)&ClntAddr, sizeof(ClntAddr))!= BUF_SIZE){
     					fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
@@ -393,7 +407,7 @@ int main(int argc, char *argv[]){
 			}
 
 			//when read ends
-			printf("Total receiving blocks: %u",next_block-1);
+			printf("Total receiving blocks: %u\n",next_block-1);
     		fclose(file);
 
 
@@ -409,7 +423,7 @@ int main(int argc, char *argv[]){
 
 
 
-
+        printf("\n\n");
 
 
 
@@ -419,4 +433,8 @@ int main(int argc, char *argv[]){
 void CatchAlarm(int ignored)     /* Handler for SIGALRM */
 {
     tries += 1;
+}
+void DieWithError(char *errorMessage){
+	perror (errorMessage) ;
+	exit(1);
 }
