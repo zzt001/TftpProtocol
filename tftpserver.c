@@ -5,9 +5,13 @@
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
+#include <strings.h>
+#include <string.h>
 #include "tftp.h"
 
 
+int tries = 0;
+void CatchAlarm(int ignored);
 
 
 void DieWithError(char *errorMessage);
@@ -48,7 +52,7 @@ int main(int argc, char *argv[]){
 	// construct local address structure
 	memset(&servAddr, 0 , sizeof(servAddr));
 	servAddr.sin_family = AF_INET; //internet address family
-	servAddr.sin_addr.s_addr = htonl(INADDR_ANY) 
+	servAddr.sin_addr.s_addr = htonl(INADDR_ANY); 
 	servAddr.sin_port = htons(servPort);
 
 	//bind to the local address
@@ -114,7 +118,7 @@ int main(int argc, char *argv[]){
 				continue;
 
 			}
-			File *file = fopen(filename,"rb");
+			FILE *file = fopen(filename,"rb");
 			// check file exists or not
 			if(file ==NULL ){
 				create_Error((unsigned short)1, tftp_errors[1], err_packet);
@@ -137,7 +141,7 @@ int main(int argc, char *argv[]){
         	/* send first block */
         	sizeReadIn = fread(buf+4, 1, 512, file);
             create_data(packet_block, buf);
-            printf("Sending pck #u\n",packet_block);
+            printf("Sending pck #%u\n",packet_block);
             if (sendto(sock, buf, 4+sizeReadIn, 0, (struct sockaddr *)&ClntAddr, sizeof(ClntAddr)) != 4+sizeReadIn) {
                 fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
                 fclose(file);
@@ -151,12 +155,12 @@ int main(int argc, char *argv[]){
                 fromSize = sizeof(fromAddr);
 
             	alarm(TIMEOUT_SECS);
-            	while((receiveLen = recvfrom(sock, receive_buffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0 || ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+            	while(( recvfrom(sock, receive_buffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0 || ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
                 /* Alarm went off */
                 if (errno == EINTR) {
                     if (tries < MAXTRIES) {
                         printf("timed out, %d more tries...\n", MAXTRIES-tries);
-                        printf("Resending pck #u\n",packet_block);
+                        printf("Resending pck #%u\n",packet_block);
                         if(sendto(sock, buf, 4+sizeReadIn, 0,(struct sockaddr *)&ClntAddr, sizeof(ClntAddr))!= 4+sizeReadIn){
                             fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
                             exit(1);
@@ -179,6 +183,7 @@ int main(int argc, char *argv[]){
 
             	}	
             	alarm(0);
+            	tries=0;
 
 
 
@@ -209,7 +214,7 @@ int main(int argc, char *argv[]){
 	                		break;
 	                	}
 	            		create_data(packet_block, buf);
-	            		printf("Sending pck #u\n",packet_block);
+	            		printf("Sending pck #%u\n",packet_block);
 	            		if (sendto(sock, buf, 4+sizeReadIn, 0, (struct sockaddr *)&ClntAddr, sizeof(ClntAddr)) != 4+sizeReadIn) {
 	                		fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
 	                		fclose(file);
@@ -259,7 +264,8 @@ int main(int argc, char *argv[]){
 
 			char buf[BUF_SIZE];
 			int done = 0;
-			int tries = 0;
+
+			int receiveLen;
 
 			strcpy(filename, receive_buffer+2);
 
@@ -273,7 +279,7 @@ int main(int argc, char *argv[]){
 			}
 
 			//check already existence
-			File *file = fopen(filename,"rb");
+			FILE *file = fopen(filename,"rb");
 			// check file exists or not
 			if (file ==NULL){
 				create_Error((unsigned short)1, tftp_errors[1], err_packet);
@@ -296,7 +302,7 @@ int main(int argc, char *argv[]){
    
 
         	//open for writing in
-        	FILE* file = fopen( filename, "wb" );
+        	file = fopen( filename, "wb" );
         	unsigned short next_block = 1;
         	unsigned short packet_block;
         	unsigned short ack_block = 1;
@@ -323,6 +329,7 @@ int main(int argc, char *argv[]){
 
             	}
         		alarm(0);
+
 
 
     			//get opcode code 
@@ -394,7 +401,7 @@ int main(int argc, char *argv[]){
 		
 
 		else{
-			handleError((unsigned short)4, tftp_errors[4]);
+			create_Error((unsigned short)4, tftp_errors[4],err_packet);
 
 		}
 
@@ -408,4 +415,8 @@ int main(int argc, char *argv[]){
 
 	}
 
+}
+void CatchAlarm(int ignored)     /* Handler for SIGALRM */
+{
+    tries += 1;
 }

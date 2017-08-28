@@ -8,8 +8,8 @@
 #include    "tftp.h"
 #include    <signal.h>
 #include    <errno.h>
-	
-
+void CatchAlarm(int ignored);
+int tries =0;
 
 int main(int argc, char*argv[]){
 	int sock;
@@ -19,7 +19,7 @@ int main(int argc, char*argv[]){
 	unsigned int fromSize;
 	char *servIP;
 	char MsgBuffer[BUF_SIZE]; //buffer for receiving packet
-	char filename[FILENAME_MAX];
+	char *filename;
 	char * opRead = "-r";
 	char * opWrite = "-w";
 	char *packet;
@@ -27,8 +27,8 @@ int main(int argc, char*argv[]){
 	int packetLen;
 	int receiveLen;
 	int done =0;
-    int tries=0;
     struct sigaction myAction;
+    char buf[BUF_SIZE];
 
 	/* check command line argument*/
 	if(argc <3 || strcmp(argv[1],opRead)!=0 || strcmp(argv[1],opWrite)!=0 ){
@@ -118,6 +118,7 @@ int main(int argc, char*argv[]){
 
             }
         alarm(0);
+        tries =0;
 
     	FILE* file = fopen( filename, "wb" );
     	unsigned short next_block = 1;
@@ -137,7 +138,7 @@ int main(int argc, char*argv[]){
     		opcode = ntohs(opcode);
     		// if error 
     		if(opcode == ERROR) {
-    			fprintf("Request rejected.\n");
+    			printf("Request rejected.\n");
     			fclose(file);
     			exit(1);
     		}
@@ -180,12 +181,12 @@ int main(int argc, char*argv[]){
 
 
     			//send ack to sender
-    			char ack_packet[4];
-    			create_ack(ack_block, ack_packet);
+
+    			create_ack(ack_block, buf);
 
     			printf("Sending Ack #%u",ack_block);
 
-    			if(sendto(sock, ack_packet, ACK_LEN,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= ACK_LEN){
+    			if(sendto(sock, buf, BUF_SIZE,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= BUF_SIZE){
     				fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
     			}
 
@@ -216,7 +217,7 @@ int main(int argc, char*argv[]){
 
     //write request
     else{
-    	buf = create_request(WRQ,filename,mode);
+    	packet = create_request(WRQ,filename,mode);
         printf("Sending [Write request]\n");
         if (sendto(sock, packet, packetLen, 0, (struct sockaddr *)&servAddr, sizeof(servAddr)) != packetLen) {
             fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
@@ -245,6 +246,7 @@ int main(int argc, char*argv[]){
 
             }
         alarm(0);
+        tries=0;
 
 
 
@@ -348,6 +350,7 @@ int main(int argc, char*argv[]){
 
             }
             alarm(0);
+            tries=0;
         }
 
         printf("Total transmitting blocks: %u", packet_block);
@@ -381,6 +384,7 @@ int main(int argc, char*argv[]){
 
             }
         alarm(0);
+        tries=0;
 
         //receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
         if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
@@ -417,10 +421,8 @@ int main(int argc, char*argv[]){
 
 
 
-
-
-
-
-
-
+}
+void CatchAlarm(int ignored)     /* Handler for SIGALRM */
+{
+    tries += 1;
 }

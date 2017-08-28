@@ -14,10 +14,9 @@
 #define ACK 4
 #define ERROR 5
 #define SERV_LOCALHOST "127.0.0.1"
-#define ACK_LEN
-#define FILENAME_MAX 128
 #define ERROR_MAX 133
 #define TIMEOUT_SECS 2
+#define WAIT_MAX_SEC 20
 #define MAXTRIES 10
 
 
@@ -29,13 +28,13 @@ char * tftp_errors[]={
 	"Illegal TFTP operation.",
 	"Unknown transfer ID.",
 	"File already exists",
-	"No such user."
+	"Server is busy serving another client. Please wait."
 };
 
 void create_ack(unsigned short ack_block, char* ack_buff);
-char * create_request(unsigned short opcode);
+char * create_request(unsigned short opcode, char* filename, char* mode);
 void create_data(unsigned short data_block, char* data_buff);
 
 void create_Error(unsigned short errorCode, char* errorMessage, char* error_buff);
-void CatchAlarm(int ignored);
+
 #endif

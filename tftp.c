@@ -38,7 +38,3 @@ void create_Error(unsigned short errorCode, char* errorMessage, char* error_buff
 	strcpy(error_buff+4,errorMessage);
 
 }
-
-void CatchAlarm(int ignored){
-	tries += i;
-}
