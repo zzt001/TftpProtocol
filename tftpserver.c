@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define DATAMAX 512
+
 
 void DieWithError(char *errorMessage);
 
@@ -13,22 +13,26 @@ int main(int argc, char *argv[]){
 	struct sockaddr_in servAddr;   /*local address*/
 	struct sockaddr_in ClntAddr;    /* client address */
 	unsigned int cliAddrLen;   // length of incoming message
-	char buffer[DATAMAX];  // Buffer for data
+	char receive_buffer[BUF_SIZE];  // Buffer for data
 	unsigned short servPort;    //  server port
 	int recvMsgSize;  // size of received message
 
+	char filename[FILENAME_MAX];
+	char* mode = MODE;
+	char err_packet[ERROR_MAX];
+
 	// we use serve to determine if server is currently serving client
 	// and curr_clntAddr to store that client address
-	int serve = 0;
-	struct curr_clntAddr;
+	/*int serve = 0;
+	struct curr_clntAddr;*/
 
-	if ( argc != 2 || argv[1] != '&'){
+	if ( argc != 2 || strcmp(argv[1],"&")!=0){
 		fprintf(stderr, "Usage: %s &\n", argv[0]);
 		exit(0);
 	}
 
 
-	servPort = 61004;
+	servPort = SERV_PORT;
 
 	if ((sock = socket(PF_INET,SOCK_DGRAM, IPPROTO_UDP ))< 0)
 		DieWithError("socket() failed");
@@ -46,12 +50,12 @@ int main(int argc, char *argv[]){
 	while(1){
 		cliAddrLen = sizeof(ClntAddr);
 		// block until receive message from a client
-		if((recvMsgSize = recvfrom(sock,Buffer,DATAMAX,0,(struct sockaddr*)&ClntAddr,&cliAddrLen)) < 0)
+		if((recvMsgSize = recvfrom(sock,receive_buffer,BUF_SIZE,0,(struct sockaddr*)&ClntAddr,&cliAddrLen)) < 0)
 			DieWithError("recvfrom() failed");
 
 		// if server serves no client, we store this client's address and flip the serve variable
 		// else we reject this client since we only support one client any time
-		if(!serve){
+		/*if(!serve){
 			serve = 1;
 			//copy clntaddress to local
 			memset(&curr_clntAddr,0,sizeof(curr_clntAddr));
@@ -64,10 +68,215 @@ int main(int argc, char *argv[]){
 			if(curr_clntAddr.sin_port != ClntAddr.sin_port || curr_clntAddr.sin_addr.s_addr != ClntAddr.sin_addr.s_addr)
 				DieWithError("server is currently serving someone else. please wait!");
 
+		}*/
+
+
+		printf("Handling client %s\n",inet_ntoa(ClntAddr.sin_addr));
+
+		unsigned short opcode;
+		//get the opcode from packet
+		memcpy(&opcode, receive_buffer, 2);
+		opcode = ntohs(opcode);
+
+
+		// we handle read request
+		if(opcode == RRQ){
+			//get filename
+			strcpy(filename, receive_buffer+2);
+
+			// check mode
+			if(strcmp(mode, receive_buffer+2+strlen(filename)+1)!=0){
+
+				create_Error((unsigned short)0, "Wrong request mode!", err_packet);
+				sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&ClntAddr,sizeof(ClntAddr));
+				continue;
+
+			}
+
+			// check file exists or not
+			if(File *file = fopen(filename, "rb") ==NULL){
+				create_Error((unsigned short)1, tftp_errors[1], err_packet);
+				sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&ClntAddr,sizeof(ClntAddr));
+				continue;
+			}
+
+			// read and transmit file
+
+        	unsigned short send_block;
+        	unsigned short packet_block = 0;
+        	unsigned short ack_block = 0;
+        	char buf[BUF_SIZE];
+        	int sizeReadIn;
+        	int done = 0;
+
+        	//transfer file from server to client
+        	while(!done) {
+
+
+            //receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
+            if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+                fprintf(stderr,"Error: received a packet from unknown source.\n");
+                fclose(file);
+                exit(1);
+            }
+
+            //get opt code
+            unsigned short opcode;
+            memcpy(&opcode, MsgBuffer, 2);
+            opcode = ntohs(opcode);
+            //if error
+            if(opcode == ERROR) {
+                fprintf(stderr, "Request rejected\n");
+                fclose(file);
+                exit(1);
+            }
+            else if ( opcode == ACK ) {
+                memcpy(&ack_block, MsgBuffer+2, 2);
+                ack_block = ntohs(ack_block);
+
+                printf("Received ACK packet %u\n", ack_block);
+
+                
+                if (ack_block == packet_block) {
+                    //determine the data length
+                    sizeReadIn = fread(buf+4, 1, 512, file);
+
+                    //send to serveer
+                    packet_block++;
+                    create_data(packet_block, buf);
+                    if (sendto(sock, buf, 4+sizeReadIn, 0, (struct sockaddr *)&servAddr, sizeof(servAddr)) != 4+sizeReadIn) {
+                        fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
+                        fclose(file);
+                        exit(1);
+                    }
+
+
+                    if (sizeReadIn == 0) {
+                        done = 1;
+                        break;
+
+                    }
+
+
+                }
+                else if (ack_block > packet_block) {
+                    fprintf(stderr, "unordered ACK received. Session terminated\n");
+                    fclose(file);
+                    exit(1);
+                }
+                else {
+                    printf("Received duplicate ack #%u. ignored.\n", ack_block);
+                }
+            }
+            else {
+                fprintf(stderr,"Unknown packet received. Session terminated\n");
+                exit(1);
+            }
+
+
+
+            fromSize = sizeof(fromAddr);
+
+            alarm(TIMEOUT_SECS);
+            while((receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0){
+                /* Alarm went off */
+                if (errno == EINTR) {
+                    if (tries < MAXTRIES) {
+                        printf("timed out, %d more tries...\n", MAXTRIES-tries);
+                        if(sendto(sock, buf, BUF_SIZE, 0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= BUF_SIZE){
+                            fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
+                            exit(1);
+                            alarm(TIMEOUT_SECS);
+                        }
+                    }
+                    else{
+                        fprintf(stderr,"No response. Session ends");
+                        exit(1);
+                    }
+                }
+                else{
+                    fprintf(stderr,"Rcvfrom() failed");
+                    exit(1);
+                }
+
+            }
+            alarm(0);
+        }
+
+        printf("Total transmitting blocks: %u", packet_block);
+        fclose(file);
+
+
+        fromSize = sizeof(fromAddr);
+        
+        alarm(TIMEOUT_SECS);
+        while((receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0){
+                /* Alarm went off */
+                if (errno == EINTR) {
+                    if (tries < MAXTRIES) {
+                        printf("timed out, %d more tries...\n", MAXTRIES-tries);
+                        if(sendto(sock, buf, 4+sizeReadIn,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= 4+sizeReadIn){
+                            fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
+                            exit(1);
+                            alarm(TIMEOUT_SECS);
+                        }
+                    }
+                    else{
+                        fprintf(stderr,"No response. Session ends");
+                        exit(1);
+                    }
+                }
+                else{
+                    fprintf(stderr,"Rcvfrom() failed");
+                    exit(1);
+                }
+
+            }
+        alarm(0);
+
+        //receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
+        if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+            fprintf(stderr,"Error: received a packet from unknown source.\n");
+            fclose(file);
+            exit(1);
+        }
+
+        //get opt code
+        unsigned short opcode;
+        memcpy(&opcode, MsgBuffer, 2);
+        opcode = ntohs(opcode);
+        if(opcode == ERROR) {
+            fprintf(stderr, "Request rejected\n");
+            fclose(file);
+            exit(1);
+        }
+        else if (opcode == ACK) {
+            memcpy(&ack_block, MsgBuffer+2, 2);
+            ack_block = ntohs(ack_block);
+
+            if (ack_block != packet_block) {
+                //TODO
+            }
+        }
+        else {
+            fprintf(stderr,"Unknown packet received. Session terminated\n");
+            exit(1);
+        }
+
+
+
+
+		}
+		else if( opcode ==WRQ){
+
 		}
 		
 
-		printf("Handling client %s\n",inet_ntoa(ClntAddr.sin_addr));
+		else{
+			handleError((unsigned short)4, tftp_errors[4]);
+
+		}
+
 
 
 
