@@ -3,6 +3,10 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
+#include <errno.h>
+#include "tftp.h"
+
 
 
 
@@ -12,7 +16,9 @@ int main(int argc, char *argv[]){
 	int sock;         /*Socket*/
 	struct sockaddr_in servAddr;   /*local address*/
 	struct sockaddr_in ClntAddr;    /* client address */
-	unsigned int cliAddrLen;   // length of incoming message
+	unsigned int cliAddrLen;   
+	struct sockaddr_in fromAddr;    /* sender's address */
+	unsigned int fromSize;    
 	char receive_buffer[BUF_SIZE];  // Buffer for data
 	unsigned short servPort;    //  server port
 	int recvMsgSize;  // size of received message
@@ -20,6 +26,8 @@ int main(int argc, char *argv[]){
 	char filename[FILENAME_MAX];
 	char* mode = MODE;
 	char err_packet[ERROR_MAX];
+
+	struct sigaction myAction;
 
 	// we use serve to determine if server is currently serving client
 	// and curr_clntAddr to store that client address
@@ -47,10 +55,31 @@ int main(int argc, char *argv[]){
 	if(bind(sock, (struct sockaddr *) &servAddr, sizeof(servAddr))<0)
 		DieWithError("bind() failed");
 
+
+    /* Set signal handler for alarm signal */ 
+    myAction.sa_handler = CatchAlarm;
+
+    if (sigfillset(&myAction.sa_mask) < O) {/* block everything in handler */ 
+        fprintf(stderr, "sigfillset () failed") ;
+        exit(1);
+    }
+    myAction.sa_flags = O;
+
+    if (sigaction(SlGALRN, &myAction, O) < O) {
+        fprintf(stderr,"sigaction() failed for SIGALP~") ;
+    }
+
+
+
+
+
+
+
+
 	while(1){
-		cliAddrLen = sizeof(ClntAddr);
+		fromSize = sizeof(fromAddr);
 		// block until receive message from a client
-		if((recvMsgSize = recvfrom(sock,receive_buffer,BUF_SIZE,0,(struct sockaddr*)&ClntAddr,&cliAddrLen)) < 0)
+		if((recvMsgSize = recvfrom(sock,receive_buffer,BUF_SIZE,0,(struct sockaddr*)&fromAddr,&fromSize)) < 0)
 			DieWithError("recvfrom() failed");
 
 		// if server serves no client, we store this client's address and flip the serve variable
@@ -81,6 +110,13 @@ int main(int argc, char *argv[]){
 
 		// we handle read request
 		if(opcode == RRQ){
+			/* we store current client address */
+
+			memset(&ClntAddr,0,sizeof(ClntAddr));
+			ClntAddr.sin_family = fromAddr.sin_family;
+			ClntAddr.sin_port = fromAddr.sin_port;
+			ClntAddr.sin_addr.s_addr = fromAddr.sin_addr.s_addr;
+
 			//get filename
 			strcpy(filename, receive_buffer+2);
 
@@ -102,166 +138,117 @@ int main(int argc, char *argv[]){
 
 			// read and transmit file
 
-        	unsigned short send_block;
-        	unsigned short packet_block = 0;
-        	unsigned short ack_block = 0;
+        	unsigned short packet_block = 1;
+        	unsigned short ack_block ;
         	char buf[BUF_SIZE];
         	int sizeReadIn;
         	int done = 0;
+        	int tries = 0;
+
 
         	//transfer file from server to client
+
+        	/* send first block */
+        	sizeReadIn = fread(buf+4, 1, 512, file);
+            create_data(packet_block, buf);
+            printf("Sending pck #u\n",packet_block);
+            if (sendto(sock, buf, 4+sizeReadIn, 0, (struct sockaddr *)&ClntAddr, sizeof(ClntAddr)) != 4+sizeReadIn) {
+                fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
+                fclose(file);
+                exit(1);
+			}
+
+
         	while(!done) {
 
+                // wait to receive ack
+                fromSize = sizeof(fromAddr);
 
-            //receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
-            if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
-                fprintf(stderr,"Error: received a packet from unknown source.\n");
-                fclose(file);
-                exit(1);
-            }
+            	alarm(TIMEOUT_SECS);
+            	while((receiveLen = recvfrom(sock, receive_buffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0 || ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+                /* Alarm went off */
+                if (errno == EINTR) {
+                    if (tries < MAXTRIES) {
+                        printf("timed out, %d more tries...\n", MAXTRIES-tries);
+                        printf("Resending pck #u\n",packet_block);
+                        if(sendto(sock, buf, 4+sizeReadIn, 0,(struct sockaddr *)&ClntAddr, sizeof(ClntAddr))!= 4+sizeReadIn){
+                            fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
+                            exit(1);
+                            alarm(TIMEOUT_SECS);
+                        }
+                    }
+                    else{
+                        fprintf(stderr,"No response. Session ends");
+                        exit(1);
+                    }
+                }
+                // if we receive something from other client at this time, we reject and receive again
+                else if(ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+                		create_Error((unsigned short)1, tftp_errors[7], err_packet);
+						sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
+						continue;
+                	}
 
-            //get opt code
-            unsigned short opcode;
-            memcpy(&opcode, MsgBuffer, 2);
-            opcode = ntohs(opcode);
-            //if error
-            if(opcode == ERROR) {
-                fprintf(stderr, "Request rejected\n");
-                fclose(file);
-                exit(1);
-            }
-            else if ( opcode == ACK ) {
-                memcpy(&ack_block, MsgBuffer+2, 2);
-                ack_block = ntohs(ack_block);
+            	}	
+            	alarm(0);
 
-                printf("Received ACK packet %u\n", ack_block);
+
+
+	            //get opt code
+	            unsigned short opcode;
+	            memcpy(&opcode, receive_buffer, 2);
+	            opcode = ntohs(opcode);
+	            //if error
+	            if(opcode == ERROR) {
+	                create_Error((unsigned short)0, "Packet opcode field invalide. Request reject.", err_packet);
+					sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
+					break;
+	            }
+	            else if ( opcode == ACK ) {
+	                memcpy(&ack_block, receive_buffer+2, 2);
+	                ack_block = ntohs(ack_block);
+
+                	printf("Received ACK packet %u\n", ack_block);
 
                 
-                if (ack_block == packet_block) {
-                    //determine the data length
-                    sizeReadIn = fread(buf+4, 1, 512, file);
+	                if (ack_block == packet_block) {
+	       				// send next block#
+	                	packet_block++;
+	                	sizeReadIn = fread(buf+4, 1, 512, file);
 
-                    //send to serveer
-                    packet_block++;
-                    create_data(packet_block, buf);
-                    if (sendto(sock, buf, 4+sizeReadIn, 0, (struct sockaddr *)&servAddr, sizeof(servAddr)) != 4+sizeReadIn) {
-                        fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
-                        fclose(file);
-                        exit(1);
-                    }
+	                	if(sizeReadIn == 0){
+	                		printf("File successfully transmitted");
+	                		break;
+	                	}
+	            		create_data(packet_block, buf);
+	            		printf("Sending pck #u\n",packet_block);
+	            		if (sendto(sock, buf, 4+sizeReadIn, 0, (struct sockaddr *)&ClntAddr, sizeof(ClntAddr)) != 4+sizeReadIn) {
+	                		fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
+	                		fclose(file);
+	                		exit(1);
+						}
 
+	                }
+	                else if (ack_block > packet_block) {
+	                    fprintf(stderr, "unordered ACK received. Session terminated\n");
+	                    fclose(file);
+	                    exit(1);
+	                }
+	                else {
+	                    printf("Received duplicate ack #%u. ignored.\n", ack_block);
+	                }
+	            }
+	            else {
+	                fprintf(stderr,"Unknown packet received. Session terminated\n");
+	                exit(1);
+	            }
+	        }
 
-                    if (sizeReadIn == 0) {
-                        done = 1;
-                        break;
-
-                    }
-
-
-                }
-                else if (ack_block > packet_block) {
-                    fprintf(stderr, "unordered ACK received. Session terminated\n");
-                    fclose(file);
-                    exit(1);
-                }
-                else {
-                    printf("Received duplicate ack #%u. ignored.\n", ack_block);
-                }
-            }
-            else {
-                fprintf(stderr,"Unknown packet received. Session terminated\n");
-                exit(1);
-            }
-
-
-
-            fromSize = sizeof(fromAddr);
-
-            alarm(TIMEOUT_SECS);
-            while((receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0){
-                /* Alarm went off */
-                if (errno == EINTR) {
-                    if (tries < MAXTRIES) {
-                        printf("timed out, %d more tries...\n", MAXTRIES-tries);
-                        if(sendto(sock, buf, BUF_SIZE, 0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= BUF_SIZE){
-                            fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
-                            exit(1);
-                            alarm(TIMEOUT_SECS);
-                        }
-                    }
-                    else{
-                        fprintf(stderr,"No response. Session ends");
-                        exit(1);
-                    }
-                }
-                else{
-                    fprintf(stderr,"Rcvfrom() failed");
-                    exit(1);
-                }
-
-            }
-            alarm(0);
-        }
-
-        printf("Total transmitting blocks: %u", packet_block);
-        fclose(file);
+        	printf("Total transmitting blocks: %u", packet_block);
+        	fclose(file);
 
 
-        fromSize = sizeof(fromAddr);
-        
-        alarm(TIMEOUT_SECS);
-        while((receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0){
-                /* Alarm went off */
-                if (errno == EINTR) {
-                    if (tries < MAXTRIES) {
-                        printf("timed out, %d more tries...\n", MAXTRIES-tries);
-                        if(sendto(sock, buf, 4+sizeReadIn,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= 4+sizeReadIn){
-                            fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
-                            exit(1);
-                            alarm(TIMEOUT_SECS);
-                        }
-                    }
-                    else{
-                        fprintf(stderr,"No response. Session ends");
-                        exit(1);
-                    }
-                }
-                else{
-                    fprintf(stderr,"Rcvfrom() failed");
-                    exit(1);
-                }
-
-            }
-        alarm(0);
-
-        //receiveLen = recvfrom(sock, MsgBuffer, BUF_SIZE, 0, (struct sockaddr *)&fromAddr, &fromSize);
-        if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
-            fprintf(stderr,"Error: received a packet from unknown source.\n");
-            fclose(file);
-            exit(1);
-        }
-
-        //get opt code
-        unsigned short opcode;
-        memcpy(&opcode, MsgBuffer, 2);
-        opcode = ntohs(opcode);
-        if(opcode == ERROR) {
-            fprintf(stderr, "Request rejected\n");
-            fclose(file);
-            exit(1);
-        }
-        else if (opcode == ACK) {
-            memcpy(&ack_block, MsgBuffer+2, 2);
-            ack_block = ntohs(ack_block);
-
-            if (ack_block != packet_block) {
-                //TODO
-            }
-        }
-        else {
-            fprintf(stderr,"Unknown packet received. Session terminated\n");
-            exit(1);
-        }
+      
 
 
 

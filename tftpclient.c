@@ -6,6 +6,8 @@
 #include 	<string.h>
 #include 	<unistd.h>
 #include    "tftp.h"
+#include    <signal.h>
+#include    <errno.h>
 	
 
 
@@ -26,7 +28,7 @@ int main(int argc, char*argv[]){
 	int receiveLen;
 	int done =0;
     int tries=0;
-    void CatchAlarm(int ignored);
+    struct sigaction myAction;
 
 	/* check command line argument*/
 	if(argc <3 || strcmp(argv[1],opRead)!=0 || strcmp(argv[1],opWrite)!=0 ){
