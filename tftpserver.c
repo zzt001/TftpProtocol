@@ -60,8 +60,7 @@ int main(int argc, char *argv[]){
 	// and curr_clntAddr to store that client address
 	/*int serve = 0;
 	struct curr_clntAddr;*/
-
-	if ( argc != 1){
+	if ( argc != 1 ){
 		fprintf(stderr, "Usage: %s \n", argv[0]);
         
 		exit(1);
@@ -120,6 +119,11 @@ int main(int argc, char *argv[]){
 
 		// we handle read request
 		if(opcode == RRQ){
+            
+            //keep count the transmitting blocks
+            unsigned long total=0;
+            
+            
 			/* we store current client address */
 			memset(&ClntAddr,0,sizeof(ClntAddr));
 			ClntAddr.sin_family = fromAddr.sin_family;
@@ -162,6 +166,7 @@ int main(int argc, char *argv[]){
                 fclose(file);
                 exit(1);
 			}
+            total = 1;
 
 
         	while(!done) {
@@ -170,7 +175,7 @@ int main(int argc, char *argv[]){
                 fromSize = sizeof(fromAddr);
 
             	alarm(TIMEOUT_SECS);
-            	while(( recvfrom(sock, receive_buffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0 || ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+            	while(( recvfrom(sock, receive_buffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0 ){
                 /* Alarm went off */
                 if (errno == EINTR) {
                     if (tries < MAXTRIES) {
@@ -186,17 +191,20 @@ int main(int argc, char *argv[]){
                         printf("Client no response. This Session end.\n");
 	                    create_Error((unsigned short)0, "Client No response.", err_packet);
 						sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&ClntAddr,sizeof(ClntAddr));
-						break;
+                        break;
                     }
                 }
                 // if we receive something from other client at this time, we reject and receive again
-                else if(ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
-                		create_Error((unsigned short)1, tftp_errors[7], err_packet);
-						sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
-						continue;
-                	}
-
-            	}	
+                else {
+                    DieWithError("Recv() failed\n");
+                }
+            	}
+                if(ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr || ClntAddr.sin_port != fromAddr.sin_port){
+                    printf("Receiving another client's request, ignored\n");
+                    create_Error((unsigned short)7, tftp_errors[7], err_packet);
+                    sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
+                    continue;
+                }
             	alarm(0);
             	tries=0;
 
@@ -235,6 +243,7 @@ int main(int argc, char *argv[]){
 	                		fclose(file);
 	                		exit(1);
 						}
+                        total++;
 
 	                }
 	                else if (receive_block > last_block) {
@@ -255,7 +264,7 @@ int main(int argc, char *argv[]){
 	            }
 	        }
 
-        	printf("Total transmitting blocks: %u", last_block);
+        	printf("Total transmitting blocks: %lu", total);
         	fclose(file);
 
 
@@ -279,7 +288,8 @@ int main(int argc, char *argv[]){
 
 			printf("Handling client %s with [Write request]\n",inet_ntoa(ClntAddr.sin_addr));
 
-
+            unsigned long total = 0;
+            
 
 			strcpy(filename, receive_buffer+2);
 
@@ -326,7 +336,7 @@ int main(int argc, char *argv[]){
 
 				// if we no longer receive from the client, we end this session
 				alarm(WAIT_MAX_SEC );
-            	while((recvMsgSize = recvfrom(sock, receive_buffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0 || ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+            	while((recvMsgSize = recvfrom(sock, receive_buffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0){
                 /* Alarm went off */
 	                if (errno == EINTR) {
 	                    printf("Client no response. Session end.\n");
@@ -335,15 +345,20 @@ int main(int argc, char *argv[]){
 						break;
 	                    
 	                }
-	                else if(ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
-                		create_Error((unsigned short)1, tftp_errors[7], err_packet);
-						sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
-						continue;
+                    else {
+                        DieWithError("Rev() failed");
+                    
                 	}
 
             	}
-        		alarm(0);
+                if(ClntAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr || ClntAddr.sin_port != fromAddr.sin_port){
+                    create_Error((unsigned short)7, tftp_errors[7], err_packet);
+                    sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
+                    continue;
+                }
 
+        		alarm(0);
+                
 
 
     			//get opcode code 
@@ -357,7 +372,7 @@ int main(int argc, char *argv[]){
     				receive_block = ntohs(receive_block);
 
     				if (receive_block > next_block) {
-    					create_Error((unsigned short)1, tftp_errors[5], err_packet);
+    					create_Error((unsigned short)5, tftp_errors[5], err_packet);
 						sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
 						break;
     				}
@@ -380,7 +395,7 @@ int main(int argc, char *argv[]){
 
     					ack_block = next_block;
     					next_block++;
-
+                        total++;
     					//if the block is the last one
     					if(recvMsgSize - 4 < MAX_DATA_SIZE) {
     						done = 1;
@@ -399,15 +414,17 @@ int main(int argc, char *argv[]){
     				}
 
     			}
-    			else {
-    				fprintf(stderr,"Unknown packet received. Session terminated\n");
-    				exit(1);
-    			}
+                else {
+                    //illegal operation
+                    create_Error((unsigned short)4, tftp_errors[4], err_packet);
+                    sendto(sock,err_packet,ERROR_MAX,0,(struct sockaddr *)&fromAddr,sizeof(fromAddr));
+                    break;
+                }
 
 			}
 
 			//when read ends
-			printf("Total receiving blocks: %u\n",next_block-1);
+			printf("Total receiving blocks: %lu\n",total);
     		fclose(file);
 
 
@@ -420,7 +437,7 @@ int main(int argc, char *argv[]){
 		}
 
 
-
+         done =0;
 
 
         printf("\n\n");

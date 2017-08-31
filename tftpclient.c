@@ -10,6 +10,7 @@
 #include    <errno.h>
 void CatchAlarm(int ignored);
 int tries =0;
+unsigned long total =0;
 
 
 char *tftp_errors[]={
@@ -139,7 +140,7 @@ int main(int argc, char*argv[]){
     	// transfer file from server to client
     	while(!done){
 
-    		if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr){
+    		if(servAddr.sin_addr.s_addr != fromAddr.sin_addr.s_addr ){
     			fprintf(stderr,"Error: received a packet from unknown source.\n");
     			fclose(file);
     			exit(1);
@@ -186,6 +187,7 @@ int main(int argc, char*argv[]){
 
     				ack_block = next_block;
     				next_block++;
+                    total++;
 
 
     				
@@ -226,7 +228,7 @@ int main(int argc, char*argv[]){
 
 
     	//when read ends
-    	printf("Total receiving blocks: %u\n",next_block-1);
+    	printf("Total receiving blocks: %lu\n",total);
     	fclose(file);
 
 
@@ -241,6 +243,9 @@ int main(int argc, char*argv[]){
             fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
             exit(1);
         }
+        total = 1;
+        
+        
         fromSize = sizeof(fromAddr);
         alarm(TIMEOUT_SECS);
         while((receiveLen = recvfrom(sock, MsgBuffer , BUF_SIZE , 0, (struct sockaddr *)&fromAddr,&fromSize))<0){
@@ -251,16 +256,16 @@ int main(int argc, char*argv[]){
                         if(sendto(sock, request_packet, BUF_SIZE,0,(struct sockaddr *)&servAddr, sizeof(servAddr))!= BUF_SIZE){
                             fprintf(stderr,"sendto() sent a different number of bytes than expected\n");
                             exit(1);
-                            alarm(TIMEOUT_SECS);
                         }
+                        alarm(TIMEOUT_SECS);
                     }
                     else{
-                        fprintf(stderr,"No response. Session ends");
+                        fprintf(stderr,"No response. Session ends\n");
                         exit(1);
                     }
                 }
                 else{
-                    fprintf(stderr,"Rcvfrom() failed");
+                    fprintf(stderr,"Rcvfrom() failed\n");
                     exit(1);
                 }
 
@@ -311,8 +316,13 @@ int main(int argc, char*argv[]){
                     //determine the data length
                     sizeReadIn = fread(buf+4, 1, 512, file);
 
+                    if (sizeReadIn ==0) {
+                        break;
+                        
+                    }
                     //send to serveer
                     packet_block++;
+                    total++;
                     create_data(packet_block, buf);
                     if (sendto(sock, buf, 4+sizeReadIn, 0, (struct sockaddr *)&servAddr, sizeof(servAddr)) != 4+sizeReadIn) {
                         fprintf(stderr, "sendto() sent a different number of bytes than expected\n");
@@ -321,10 +331,7 @@ int main(int argc, char*argv[]){
                     }
 
 
-                    if (sizeReadIn ==0) {
-                        break;
-
-                    }
+                    
 
 
                 }
@@ -360,12 +367,12 @@ int main(int argc, char*argv[]){
                         alarm(TIMEOUT_SECS);
                     }
                     else{
-                        fprintf(stderr,"No response. Session ends");
+                        fprintf(stderr,"No response. Session ends\n");
                         exit(1);
                     }
                 }
                 else{
-                    fprintf(stderr,"Rcvfrom() failed");
+                    fprintf(stderr,"Rcvfrom() failed\n");
                     exit(1);
                 }
 
@@ -374,7 +381,7 @@ int main(int argc, char*argv[]){
             tries=0;
         }
 
-        printf("Total transmitting blocks: %u \n", packet_block);
+        printf("Total transmitting blocks: %lu \n", total);
         fclose(file);
 
 
