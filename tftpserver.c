@@ -54,6 +54,7 @@ int main(int argc, char *argv[]){
     char buf[BUF_SIZE];
     int sizeReadIn;
     int done = 0;
+
     
 
 	// we use serve to determine if server is currently serving client
@@ -132,6 +133,8 @@ int main(int argc, char *argv[]){
 
 			printf("Handling client %s with [Read request]\n",inet_ntoa(ClntAddr.sin_addr));
 			//get filename
+
+            
 			strcpy(filename, receive_buffer+2);
 
 			// check mode
@@ -142,7 +145,12 @@ int main(int argc, char *argv[]){
 				continue;
 
 			}
-			FILE *file = fopen(filename,"rb");
+            char file_path[FILENAME_MAX];
+            strcpy(file_path, "/serverFiles/");
+            strcat(file_path,filename);
+
+			FILE *file = fopen(file_path,"rb");
+            
 			// check file exists or not
 			if(file ==NULL ){
 				create_Error((unsigned short)1, tftp_errors[1], err_packet);
@@ -302,8 +310,13 @@ int main(int argc, char *argv[]){
 
 			}
 
+            char file_path[FILENAME_MAX];
+            strcpy(file_path, "/serverFiles/");
 			//check already existence
-			FILE *file = fopen(filename,"rb");
+            strcat(file_path,filename);
+            
+            FILE *file = fopen(file_path,"rb");
+
 			// check file exists or not
 			if (file !=NULL){
 				create_Error((unsigned short)6, tftp_errors[6], err_packet);
@@ -326,7 +339,9 @@ int main(int argc, char *argv[]){
    
 
         	//open for writing in
-        	file = fopen( filename, "wb" );
+            
+            file = fopen(file_path,"wb");
+ 
         	next_block = 1;
    
         	ack_block = 1;

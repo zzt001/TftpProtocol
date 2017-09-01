@@ -2,7 +2,7 @@
 #define TFTPHEADER_H
 
 
-#define SERV_PORT 61004 //61000+group # 
+#define SERV_PORT 12345 //61000+group # 
 #define BUF_SIZE 516 // the maximum buffer size
 #define TIMEOUT 10  
 #define MAX_DATA_SIZE 512

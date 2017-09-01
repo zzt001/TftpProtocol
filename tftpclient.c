@@ -44,6 +44,8 @@ int main(int argc, char*argv[]){
 	int done =0;
     struct sigaction myAction;
     char buf[BUF_SIZE];
+    char file_path[FILENAME_MAX];
+    strcpy(file_path, "/clientFiles/");
 
 	/* check command line argument*/
 	if(argc <3 || (strcmp(argv[1],opRead)!=0 && strcmp(argv[1],opWrite)!=0 )){
@@ -133,7 +135,11 @@ int main(int argc, char*argv[]){
         alarm(0);
         tries =0;
 
-    	FILE* file = fopen( filename, "wb" );
+        strcat(file_path,filename);
+        
+        FILE *file = fopen(file_path,"wb");
+
+        
     	unsigned short next_block = 1;
     	unsigned short packet_block;
     	unsigned short ack_block=1;
@@ -274,8 +280,10 @@ int main(int argc, char*argv[]){
         tries=0;
         
 
+        strcat(file_path,filename);
+        
+        FILE *file = fopen(file_path,"rb");
 
-        FILE* file = fopen( filename, "rb" );
         unsigned short send_block;
         unsigned short packet_block = 0;
         unsigned short ack_block = 0;
